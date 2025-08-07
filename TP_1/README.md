@@ -9,7 +9,7 @@ Este proyecto se implemento un sistema de monitoreo biométrico en tiempo real u
 
 * **Procesos Analizadores** (3 procesos): cada analizador está dedicado a un tipo de señal (`'frecuencia'`, `'presion'` o `'oxigeno'`). Cada uno lee de su pipe los datos completos enviados por el generador. Mantiene internamente una *ventana móvil* con las últimas 30 muestras recibidas. En cada paso extrae de esa ventana los valores de su señal (por ejemplo, todas las frecuencias o las tuplas de presión arterial) y calcula la media y desviación estándar usando funciones auxiliares. El resultado es un diccionario con el timestamp, el tipo de señal y los valores calculados:
 
-  ```json
+  ```python
   {
     "tipo": "frecuencia",  # o "presion" / "oxigeno"
     "timestamp": "YYYY-MM-DDTHH:MM:SS",
@@ -22,7 +22,7 @@ Este proyecto se implemento un sistema de monitoreo biométrico en tiempo real u
 
 * **Proceso Verificador y Cadena de Bloques**: este proceso recopila continuamente los resultados desde la cola. Cada vez lee los tres resultados (uno por cada analizador) correspondientes a un mismo `timestamp`. Luego verifica condiciones de seguridad: marca una alerta si la frecuencia supera 200, la presión sistólica supera 200 o el oxígeno está fuera de 90-100. A partir de estos datos construye un bloque con la estructura:
 
-  ```json
+  ```python
   {
     "timestamp": "...",
     "datos": {
@@ -68,6 +68,6 @@ El programa acepta los siguientes argumentos de línea de comandos (configurados
 
 Por ejemplo:
 
-```bash
+```sh
 python3 main.py -n 100 -v
 ```
