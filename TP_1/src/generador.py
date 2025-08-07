@@ -38,6 +38,8 @@ def generar(n:int=60,pipes:list=[],verbose:bool=False):
     verbose : bool
         Imprime en stdout los datos generados si es True.
     '''
+    if n < 0 or pipes==[]:
+        raise ValueError
     print(f'[{getpid()}] Proceso generador iniciado.')
     for i in range(n):
         dato = generar_dato()

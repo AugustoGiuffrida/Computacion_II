@@ -1,30 +1,35 @@
-import json
+from json import dumps, loads
 from time import sleep
-from src.utils import media, desviacion
 from random import randint
 from os import getpid
-    
-def leer_datos(canal_entrada:any=None, ventana:list=[], ventana_size:int=30):
+from src.utils import media, desviacion
+
+# Imports para mejorar el tipado (para hacer un poco más verborrágico a python jaja)
+from multiprocessing.connection import Connection
+from multiprocessing.queues import Queue
+from typing import Any, List
+
+def leer_datos(canal_entrada:Connection, ventana:List=[], ventana_size:int=30):
     '''
-    Lee un dato del canal de entrada y lo agrega a la ventana.
+    Consume (o lee) un dato del canal de entrada y lo agrega a la ventana.
     El tamaño de la ventana está dado por `ventana_size`. Si se supera este tamaño se elimina el elemento más antiguo.
 
     Parameters
     ----------
-    canal_de_entrada : any
-        Debe ser algún canal que permita IPC, como el extremo de lectura de un Pipe.
-    ventana : list
+    canal_de_entrada : Connection
+        Debe ser algún canal que permita IPC, como el extremo de lectura de un Pipe (consumidor).
+    ventana : List
         Lista por referencia, donde se agregan los datos leidos del generador.
     ventana_size : int
         Número entero que determina el tamaño de la ventana.
     '''
 
     # Formato del dato string: {"timestamp": "2025-06-11T15:32:09", "frecuencia": 122, "presion": [166, 99], "oxigeno": 100}
-    ventana.append(json.loads(canal_entrada.recv())) # Validar que la string sea un json válido
+    ventana.append(loads(canal_entrada.recv())) # Validar que la string sea un json válido
     if len(ventana) > ventana_size:
         ventana.pop(0)
 
-def procesar(tipo:str='none',ventana:list=[],verbose:bool=False):
+def procesar(tipo:str='none',ventana:List=[],verbose:bool=False):
     '''
     Procesa los datos de la ventana según el tipo de dato y devuelve un objeto con la media, desviación estándar y timestamp.
     
@@ -32,7 +37,7 @@ def procesar(tipo:str='none',ventana:list=[],verbose:bool=False):
     ----------
     tipo : str
         Tipo de dato. Puede ser 'frecuencia', 'presion' o 'oxigeno'.
-    ventana : list
+    ventana : List
         Lista por referencia, con los datos leidos del generador.
 
     Returns
@@ -52,7 +57,7 @@ def procesar(tipo:str='none',ventana:list=[],verbose:bool=False):
 
     # Obtiene los datos según el self.__tipo__ entonces:
     # Frecuen: datos = [55,59,65,70,90,...] todas las frecuencias cardiacas que hay en ventana 
-    # Presión: datos = [[110,80], [112,90], ...] todas las listas de presion que hay en ventana
+    # Presión: datos = [[110,80], [112,90], ...] todas las Listas de presion que hay en ventana
     # Oxigeno: datos = [92,95,96,95,96,...] todos los oxigenos que hay en ventana
     datos = [dato.get(tipo) for dato in ventana]
 
@@ -72,11 +77,12 @@ def procesar(tipo:str='none',ventana:list=[],verbose:bool=False):
     return resultado
 
 def analizar(
+        pipe_to_read:Connection, 
+        queue:Queue,
         tipo:str='none',
-        pipe_to_read:any=None, 
-        queue:any=None, n:int=0, 
-        done_count:any=None,
-        cond:any=None, 
+        n:int=0, 
+        done_count:Any=None,
+        cond:Any=None, 
         total_procs:int=3, 
         verbose:bool=False
     ):
@@ -85,14 +91,25 @@ def analizar(
     
     Parameters
     ----------
+    pipe_to_read : Connection
+        Debe ser el extremo de lectura de un Pipe.
+    queue : Queue
+        Debe ser una Queue (se usará como productor).
     tipo : str
         Tipo de dato. Puede ser 'frecuencia', 'presion' o 'oxigeno'.
-    pipe_to_read : any
-        Debe ser el extremo de lectura de un Pipe.
-    queue : any
-        Debe ser una Queue.
     n : int
         Número entero que determina cuántas veces se lee del pipe y se envía a la queue.
+    done_count: Any
+        Se espera un valor (Value) compartido, que se utiliza como "semaforo", para esperar 
+        a que todos los procesos analizadores terminen y los datos se escriban en orden en 
+        la cola. 
+    cond: Any 
+        Es la condición que me permite escribir el Value recibido (done_count) y esperar
+        al resto de procesos.
+    total_procs: int
+        Cantidad de procesos analizadores que se crearán.
+    verbose: bool
+        Mostrar información adicional en la salida estándar.
     '''
     print(f'[{getpid()} - {tipo}] Proceso analizador iniciado.')
     ventana = []
@@ -102,7 +119,7 @@ def analizar(
         leer_datos(canal_entrada=pipe_to_read, ventana=ventana)
         if verbose:
             print(f'[{getpid()} - {tipo}] Tamaño de la ventana: {len(ventana)} | Escribiendo datos en la cola...')
-        queue.put(json.dumps(procesar(tipo=tipo, ventana=ventana,verbose=verbose)))
+        queue.put(dumps(procesar(tipo=tipo, ventana=ventana, verbose=verbose)))
         # Incrementar contador
         with cond:
             done_count.value += 1

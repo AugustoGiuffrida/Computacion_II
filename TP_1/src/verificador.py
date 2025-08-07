@@ -85,6 +85,7 @@ def verificar(queue:any=None, cantidad_total:int=0, verbose:bool=False):
         with open("blockchain.json", "w") as f:
             json.dump(blockchain, f, indent=4)
         
-        print(f'[{getpid()}] Bloque {i+1} verificado\n\tHash: {bloque.get('hash')}\n\tAlerta: {bloque.get('alerta')}')
+        print(f"[{getpid()}] Bloque {i+1} verificado\n\tHash: {bloque.get('hash')}\n\tAlerta: {bloque.get('alerta')}")
+
         if verbose:
             print(f"\tDatos: {bloque.get('datos')}")
