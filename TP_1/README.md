@@ -71,3 +71,9 @@ Por ejemplo:
 ```sh
 python3 main.py -n 100 -v
 ```
+
+Para generar el reporte:
+
+```sh
+python3 verificar_cadena.py
+```
