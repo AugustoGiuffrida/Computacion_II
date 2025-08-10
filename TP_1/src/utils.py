@@ -45,4 +45,14 @@ def desviacion(tipo:str='', datos:list=[]):
         La desviación estándar de los datos. Si tipo es 'presion', devuelve una lista con las
         desviaciones estándar de los datos sistólicos y diastólicos.
     '''
-    return float(std(datos)) if tipo != 'presion' else [float(std([dato[0] for dato in datos])), float(std([dato[1] for dato in datos]))]
+    if tipo != 'presion':
+        if len(datos) <= 1:
+            return 0.0
+        else:
+            return float(std(datos, ddof=1))
+    else:
+        if len(datos) <= 1:
+            return [0.0, 0.0]
+        else:
+            return [float(std([d[0] for d in datos], ddof=1)),
+                    float(std([d[1] for d in datos], ddof=1))]

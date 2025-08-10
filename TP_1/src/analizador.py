@@ -53,6 +53,8 @@ def procesar(tipo:str='none',ventana:List=[],verbose:bool=False):
         }
         ```
     '''
+    if tipo != 'frecuencia' and tipo != 'presion' and tipo != 'oxigeno' or len(ventana) == 0:
+        raise ValueError
     timestamp = ventana[-1].get('timestamp')
 
     # Obtiene los datos según el self.__tipo__ entonces:
@@ -111,6 +113,8 @@ def analizar(
     verbose: bool
         Mostrar información adicional en la salida estándar.
     '''
+    if tipo != 'frecuencia' and tipo != 'presion' and tipo != 'oxigeno':
+        raise ValueError
     print(f'[{getpid()} - {tipo}] Proceso analizador iniciado.')
     ventana = []
     for _ in range(n):

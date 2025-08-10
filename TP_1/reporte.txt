@@ -1,0 +1,17 @@
+Todos los bloques han sido correctamente encadenados.
+Cantidad de bloques leídos: 60
+Cantidad de alertas: 0
+{
+  "medias": {
+    "frecuencia": 127.86,
+    "presión sistólica": 158.43,
+    "presión diastólica": 77.26,
+    "saturación de oxigeno": 95.26
+  },
+  "desviaciones": {
+    "frecuencia": 49.54,
+    "presión sistólica": 26.58,
+    "presión diastólica": 19.37,
+    "saturación de oxigeno": 3.53
+  }
+}

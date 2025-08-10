@@ -1,4 +1,5 @@
-import hashlib, json
+from hashlib import sha256
+from json import dumps
 
 def crear_bloque(datos:list, alerta:bool, prev_hash:str) -> dict:
     '''
@@ -41,7 +42,7 @@ def crear_bloque(datos:list, alerta:bool, prev_hash:str) -> dict:
     }
 
     # Calcular el hash del bloque
-    hash_input = prev_hash + json.dumps(cuerpo, sort_keys=True) + timestamp
-    bloque['hash'] = hashlib.sha256(hash_input.encode()).hexdigest()
+    hash_input = prev_hash + dumps(cuerpo, sort_keys=True) + timestamp
+    bloque['hash'] = sha256(hash_input.encode()).hexdigest()
 
     return bloque

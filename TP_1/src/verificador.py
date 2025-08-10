@@ -1,8 +1,9 @@
 import json
 from os import getpid
 from src.blockchain import crear_bloque
+from typing import Any
 
-def read_data(queue:any=None):
+def read_data(queue:Any=None):
     """
     Reads and deserializes data from a queue.
 
@@ -43,6 +44,7 @@ def alertar(datos:list=[]):
     bool
         True si se debe emitir una alarma, False en caso contrario.
     """
+    frec,pres,ox = 0,[0,0],0
     for dato in datos:
         temp = dato.get('tipo')
         if temp == 'frecuencia':
@@ -60,7 +62,7 @@ def alertar(datos:list=[]):
     return False
 
 
-def verificar(queue:any=None, cantidad_total:int=0, verbose:bool=False):
+def verificar(queue:Any=None, cantidad_total:int=0, verbose:bool=False):
     '''
     Lee resultados de la Queue, los valida y los muestra.
 
@@ -80,12 +82,11 @@ def verificar(queue:any=None, cantidad_total:int=0, verbose:bool=False):
         alert = alertar(datos)
         bloque = crear_bloque(datos,alert,prev_hash)
         blockchain.append(bloque)
-        prev_hash = bloque.get('hash')  # Encadenar hashes
+        prev_hash = str(bloque.get('hash'))  # Encadenar hashes
         
         with open("blockchain.json", "w") as f:
             json.dump(blockchain, f, indent=4)
         
-        print(f"[{getpid()}] Bloque {i+1} verificado\n\tHash: {bloque.get('hash')}\n\tAlerta: {bloque.get('alerta')}")
-
+        print(f'[{getpid()}] Bloque {i+1} verificado\n\tHash: {bloque.get("hash")}\n\tAlerta: {bloque.get("alerta")}')
         if verbose:
             print(f"\tDatos: {bloque.get('datos')}")
