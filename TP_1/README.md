@@ -38,14 +38,13 @@ Este proyecto se implemento un sistema de monitoreo biométrico en tiempo real u
 
   La función `crear_bloque` (en `blockchain.py`) combina los datos procesados con el `prev_hash` del bloque anterior y calcula el nuevo hash SHA-256 sobre la concatenación de `prev_hash + JSON(datos) + timestamp`. Cada nuevo bloque se agrega al final de la cadena y luego se guarda en el archivo `blockchain.json`. El verificador también imprime en pantalla el número del bloque, su hash y si tiene alerta o no.
 
-* **Cadena de Bloques (Blockchain)**: es básicamente una lista de bloques almacenada en `blockchain.json`. Cada bloque almacena el hash del bloque anterior, lo que vincula todos los registros y evita modificaciones accidentales o maliciosas. De este modo, la integridad de los datos biométricos procesados queda garantizada.
+* **Cadena de Bloques (Blockchain)**: es básicamente una lista de bloques almacenada en `blockchain.json`. Cada bloque almacena el hash del bloque anterior, lo que vincula todos los registros. De este modo, la integridad de los datos biométricos procesados queda garantizada.
 
-## Flujo general de datos
+Se usan pipes sobre named pipes (o fifos) porque python presenta una abastraccion de alto nivel de pipes y no tiene sentido crear un fd para crear un named pipe para comunicar dos procesos. Esta tarea la hacen mas eficientemente los pipes anonimos.
 
-1. **Generador**: cada segundo produce un dato biométrico (diccionario JSON) y lo envía a los analizadores.
-2. **Analizadores**: reciben los datos, actualizan su ventana móvil (30 muestras) y calculan media y desviación de su señal. Luego envían el resultado al verificador vía la cola.
-3. **Verificador**: lee tres resultados de la cola (uno por analizador), verifica rangos de seguridad (posible alerta), y construye un bloque con esos datos. El bloque se añade a la lista de bloques y se guarda en `blockchain.json`.
-4. **Cadena de Bloques** final: tras `n` iteraciones, hay `n` bloques en `blockchain.json`, cada uno ligado al anterior por el hash, lo que completa el registro permanente.
+Se eligieron queues porque python tiene abstraciones de alto nivel y ademas este ipc ideal cuando se tiene varios productores y un consumidor como en este caso.
+
+Es importante utilizar values o conditions para sincronizar los procesos analizadores y que escriban todos en la queue en orden.
 
 ## Ejecución
 
