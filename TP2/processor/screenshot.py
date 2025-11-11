@@ -1,30 +1,41 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 import base64
 import logging
-from selenium.webdriver.remote.webdriver import WebDriver
 
 log = logging.getLogger(__name__)
 
-def take_screenshot(url:str,driver:WebDriver):
+def generate_screenshot(url: str) -> str:
     """
-    Toma un screenshot de una página web.
-
-    Parámetros:
-    url (str): La URL de la página a tomar el screenshot.
-    driver (WebDriver): El objeto WebDriver que se usará para tomar el screenshot.
-
-    Devuelve un string con el screenshot codificado en base64.
+    Genera un screenshot de la URL usando Selenium Headless.
+    Devuelve la imagen como una cadena Base64.
     """
-    log.info(f"Tomando screenshot de {url}...")
-
+    chrome_options = Options()
+    chrome_options.add_argument("--headless") 
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--window-size=1280,720")
+    
+    driver = None
     try:
-        # Espera un poco (no es ideal, pero simple)
-        driver.implicitly_wait(2) 
+        driver = webdriver.Chrome(options=chrome_options)
+        # Timeout de carga de página de 30 segundos
+        driver.set_page_load_timeout(30) 
         
-        png_data = driver.get_screenshot_as_png()
-        b64_data = base64.b64encode(png_data).decode('utf-8')
-        log.info(f"Screenshot de {url} completado.")
-        return b64_data
+        log.info(f"[Processor] Navegando a {url} para screenshot...")
+        driver.get(url)
+        
+        # Captura la imagen como bytes PNG
+        png_bytes = driver.get_screenshot_as_png()
+        
+        # Codifica a Base64 para el JSON de respuesta
+        log.info(f"[Processor] Screenshot generado para {url}.")
+        return base64.b64encode(png_bytes).decode('utf-8')
         
     except Exception as e:
-        log.error(f"Error al tomar screenshot de {url}: {e}")
-        raise
+        # Manejo de errores de Selenium/Carga de página
+        log.error(f"Error generando screenshot para {url}: {e}")
+        return "" # Devuelve cadena vacía si falla la captura
+    finally:
+        if driver:
+            driver.quit()

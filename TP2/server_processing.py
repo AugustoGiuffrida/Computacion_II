@@ -1,173 +1,178 @@
+#!/usr/bin/env python3
 import argparse
 import socketserver
 import json
 import logging
-from concurrent.futures import ProcessPoolExecutor
 import os
+import struct
+from concurrent.futures import ProcessPoolExecutor, TimeoutError
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from datetime import datetime
 
-from processor.screenshot import take_screenshot
-from processor.image_processor import generate_thumbnail
+# Importaciones de módulos locales
+from common.protocol import recv_message, pack_message, HEADER_SIZE
+from processor.screenshot import generate_screenshot
 from processor.performance import analyze_performance
+from processor.image_processor import process_images
 
-logging.basicConfig(level=logging.INFO)
+# Configuración de Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [Servidor B] [%(levelname)s] %(message)s')
 log = logging.getLogger(__name__)
 
-def setup_driver():
-    """Configurar los parametros del driver (selenium)"""
+# Timeout para el trabajo completo en el pool
+JOB_TIMEOUT_SECONDS = 120
+
+# --- Función de Tarea (CPU-Bound) ---
+# Esta función se ejecutará en el ProcessPoolExecutor
+def worker_process(job_data: dict) -> dict:
+    """
+    Ejecuta todas las tareas CPU-Bound para una solicitud.
+    """
+    url = job_data.get('url')
+    image_urls = job_data.get('image_urls', [])
+    
+    pid = os.getpid()
+    log.info(f"[PID {pid}] Iniciando análisis para: {url}")
+    
+    # 1. Generar Screenshot y 2. Análisis de Rendimiento (con Selenium)
+    # Optimizamos reutilizando el driver para screenshot y performance
+    
+    screenshot_b64 = ""
+    performance_data = {}
+    
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-deb-shm-usage")
+    chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--window-size=1280,720")
-    driver = webdriver.Chrome(options=chrome_options)
-    driver.set_page_load_timeout(20)
-    return driver
-
-
-# --- Funciones de Tarea (CPU-Bound) ---
-# Estas funciones se ejecutarán en el ProcessPoolExecutor
-def run_full_analysis(url: str) -> dict:
-    """
-    Realiza un análisis completo de una página web.
-
-    Este análisis comprende tres partes:
-    1. Generar un screenshot de la página.
-    2. Analizar el rendimiento de la página (window.performance).
-    3. Generar thumbnails de las imágenes de la página.
-
-    Parámetros:
-    url (str): La URL de la página a analizar.
-
-    Devuelve un diccionario con los siguientes campos:
-    status (str): El estado del análisis ("success" o "error").
-    screenshot (str): El screenshot de la página en formato base64.
-    performance (dict): Los datos de rendimiento de la página (ver analyze_performance).
-    thumbnails (list): Las thumbnails generadas (ver generate_thumbnail).
-    """
-    log.info(f"[PID {os.getpid()}] Iniciando análisis para: {url}")
     driver = None
+    
     try:
-        driver = setup_driver()
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.set_page_load_timeout(30)
+        
+        log.info(f"[PID {pid}] Navegando a {url} (Selenium)...")
         driver.get(url)
-        # 1. Generar Screenshot
-        screenshot_b64 = take_screenshot(url=url, driver=driver)
         
-        # 2. Análisis de Rendimiento
-        performance_data = analyze_performance(url=url, driver=driver)
+        # Tarea 1: Screenshot
+        log.info(f"[PID {pid}] Generando screenshot...")
+        png_bytes = driver.get_screenshot_as_png()
+        screenshot_b64 = base64.b64encode(png_bytes).decode('utf-8')
         
-        # 3. Análisis de Imágenes
-        thumbnails = generate_thumbnail(driver=driver)
+        # Tarea 2: Performance
+        log.info(f"[PID {pid}] Analizando rendimiento...")
+        performance_data = analyze_performance(url, driver)
         
-        log.info(f"[PID {os.getpid()}] Análisis completado para: {url}")
-        
-        return {
-            "status": "success",
-            "screenshot": screenshot_b64,
-            "performance": performance_data,
-            "thumbnails": thumbnails
-        }
     except Exception as e:
-        log.error(f"[PID {os.getpid()}] Error en análisis de {url}: {e}")
-        return {"status": "error", "message": str(e)}
-
+        log.error(f"[PID {pid}] Error en tareas de Selenium para {url}: {e}")
+        performance_data = {"error": f"Selenium failed: {e}"}
     finally:
         if driver:
             driver.quit()
+            
+    # Tarea 3: Análisis de Imágenes (Thumbnails)
+    log.info(f"[PID {pid}] Generando thumbnails...")
+    try:
+        thumbnails = process_images(image_urls)
+    except Exception as e:
+        log.error(f"[PID {pid}] Error en procesamiento de imágenes: {e}")
+        thumbnails = []
+
+    log.info(f"[PID {pid}] Análisis completado para: {url}")
+    
+    return {
+        "screenshot": screenshot_b64,
+        "performance": performance_data,
+        "thumbnails": thumbnails
+    }
 
 # ----------------------------------------
 
 class TaskHandler(socketserver.BaseRequestHandler):
     """
-    Manejador para cada conexión TCP al Servidor B.
+    Manejador para cada conexión TCP del Servidor A.
     """
     
     def handle(self):
         try:
-            # --- 1. Recibir datos ---
-            # Usaremos un protocolo simple: 4 bytes (longitud) + JSON
-            header = self.request.recv(4)
-            if not header:
-                return
-            
-            msg_len = int.from_bytes(header, 'big')
-            data = self.request.recv(msg_len)
-            
-            task_data = json.loads(data.decode('utf-8'))
-            log.info(f"Recibida tarea: {task_data}")
+            # --- 1. Recibir datos (usando el protocolo) ---
+            log.info(f"Conexión recibida de: {self.client_address}")
+            job_data = recv_message(self.request)
+            log.info(f"Recibida tarea para: {job_data.get('url')}")
 
             start = datetime.now()
-            # --- 2. Enviar tarea al Pool de Procesos ---
-            # self.server.process_pool es el ProcessPoolExecutor
-            future = self.server.process_pool.submit(
-                run_full_analysis, 
-                task_data['url']
-            )
             
-            # Obtenemos el resultado (esto bloquea ESTE HILO, 
-            # pero no el servidor principal ni otros hilos)
-            result = future.result() 
+            # --- 2. Enviar tarea al Pool de Procesos ---
+            pool = self.server.process_pool
+            future = pool.submit(worker_process, job_data)
+            
+            # Obtenemos el resultado (esto bloquea ESTE HILO, 
+            # pero no el servidor principal)
+            result_data = future.result(timeout=JOB_TIMEOUT_SECONDS) 
 
             end = datetime.now()
-            log.info(f'Tiempo transcurrido para el analisis: {end-start}')
+            log.info(f"Trabajo completado para {job_data.get('url')} en {end-start}")
 
             # --- 3. Enviar respuesta ---
-            response_data = json.dumps(result).encode('utf-8')
-            response_header = len(response_data).to_bytes(4, 'big')
+            response_msg = pack_message(result_data)
+            self.request.sendall(response_msg)
             
-            self.request.sendall(response_header + response_data)
-            
+        except (ConnectionError, struct.error):
+            log.warning(f"Error de protocolo/conexión con {self.client_address}. Cliente desconectado.")
+        except TimeoutError:
+            log.error(f"Timeout en job para {job_data.get('url')} (límite: {JOB_TIMEOUT_SECONDS}s)")
+            self.send_error(f"Processing job timed out after {JOB_TIMEOUT_SECONDS}s")
         except Exception as e:
             log.error(f"Error en TaskHandler: {e}", exc_info=True)
-            try:
-                # Intentar enviar un error de vuelta
-                err_msg = json.dumps({"status": "error", "message": "Error interno del servidor B"}).encode('utf-8')
-                err_header = len(err_msg).to_bytes(4, 'big')
-                self.request.sendall(err_header + err_msg)
-            except:
-                pass # La conexión ya puede estar cerrada
+            self.send_error(f"Error interno del Servidor B: {e}")
+
+    def send_error(self, error_msg: str):
+        """Intenta enviar un error de vuelta al Servidor A."""
+        try:
+            error_response = {"status": "error", "error": error_msg}
+            self.request.sendall(pack_message(error_response))
+        except Exception:
+            pass # La conexión ya puede estar cerrada
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     """Servidor TCP que usa hilos para manejar cada conexión."""
     allow_reuse_address = True
     
-    def __init__(self, server_address, RequestHandlerClass, process_pool):
+    def __init__(self, server_address, RequestHandlerClass, pool):
         super().__init__(server_address, RequestHandlerClass)
-        self.process_pool = process_pool
+        self.process_pool = pool
 
 def main():
-    DEFAULT_NUM_PROCESS = 4
-
-    parser = argparse.ArgumentParser(description="Servidor de Procesamiento Distribuido")
-    parser.add_argument('-i', '--ip', required=True, help="Dirección de escucha")
+    default_procs = os.cpu_count() or 4
+    parser = argparse.ArgumentParser(
+        description="Servidor de Procesamiento Distribuido (Parte B)",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('-i', '--ip', required=True, help="Dirección de escucha (IPv4)")
     parser.add_argument('-p', '--port', required=True, type=int, help="Puerto de escucha")
-    parser.add_argument('-n', '--processes', type=int, default=DEFAULT_NUM_PROCESS, 
-                        help="Número de procesos en el pool (default: 4)")
+    parser.add_argument('-n', '--processes', type=int, default=default_procs, 
+                        help="Número de procesos en el pool (default: CPU count)")
     
     args = parser.parse_args()
-    
-    num_processes = args.processes if args.processes else DEFAULT_NUM_PROCESS
-    log.info(f"Iniciando ProcessPoolExecutor con {num_processes} workers...")
 
-    # Creamos un pool (por defecto de 4 procesos). Estos procesos
+    log.info(f"Iniciando ProcessPoolExecutor con {args.processes} workers...")
+
     # Usamos un context manager para asegurar que el pool se cierre
-    with ProcessPoolExecutor(max_workers=num_processes) as pool:
+    with ProcessPoolExecutor(max_workers=args.processes) as pool:
         server_address = (args.ip, args.port)
         
-        # Pasamos el pool al constructor de nuestro servidor
         server = ThreadedTCPServer(
             server_address, 
             TaskHandler,
-            process_pool=pool
+            pool=pool
         )
         
-        log.info(f"Iniciando Servidor B en {args.ip}:{args.port}")
+        log.info(f"Servidor B (Procesamiento) escuchando en {args.ip}:{args.port}")
         try:
             server.serve_forever()
         except KeyboardInterrupt:
-            log.info("Servidor B detenido manualmente.")
+            log.info("Servidor B detenido.")
         finally:
             log.info("Cerrando servidor B...")
             server.shutdown()
