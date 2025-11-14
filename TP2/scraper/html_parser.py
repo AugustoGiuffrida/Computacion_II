@@ -6,7 +6,7 @@ def scrape_html_content(html_content: str, base_url: str) -> Dict:
     """
     Extrae el título, enlaces, conteo y URLs de imágenes, y estructura de encabezados.
     """
-    soup = BeautifulSoup(html_content, 'lxml')
+    soup = BeautifulSoup(html_content, 'html')
     
     # 1. Título
     title = soup.title.string.strip() if soup.title and soup.title.string else "No Title Found"

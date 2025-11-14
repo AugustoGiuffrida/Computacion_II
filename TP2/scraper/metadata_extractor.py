@@ -16,7 +16,7 @@ def extract_meta_tags(html_content: str) -> Dict:
     """
     Extrae meta tags relevantes (description, keywords, Open Graph tags).
     """
-    soup = BeautifulSoup(html_content, 'lxml')
+    soup = BeautifulSoup(html_content, 'html')
     meta_tags = {}
     
     # 1. Extraer tags 'name' y 'property'
